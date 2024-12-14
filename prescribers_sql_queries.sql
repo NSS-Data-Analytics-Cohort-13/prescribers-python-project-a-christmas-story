@@ -11,8 +11,9 @@ group by d.opioid_drug_flag, fc.county
 
 --MY QUERY:--
 SELECT 
-    f.fipscounty
+	COUNT(opioid_drug_flag) as flag_count
 ,	f.county
+,	f.fipscounty
 FROM 
     prescription AS pres
 INNER JOIN 
@@ -33,6 +34,15 @@ INNER JOIN
 WHERE 
     d.opioid_drug_flag = 'Y'
     AND f.state = 'TN'
+GROUP BY 
+	f.fipscounty
+,	f.county
+ORDER BY 
+	flag_count DESC
+
+--prescription table for reference:--
+SELECT * 
+FROM prescription;
 
 -- * Who are the top opioid prescibers for the state of Tennessee?
 -- * What did the trend in overdose deaths due to opioids look like in Tennessee from 2015 to 2018?

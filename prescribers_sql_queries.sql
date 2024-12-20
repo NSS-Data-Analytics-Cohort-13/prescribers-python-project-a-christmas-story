@@ -19,9 +19,8 @@ ORDER BY opioid_drug_flag DESC;
 
 WITH cte1 AS(
 SELECT 
-	COUNT(opioid_drug_flag) AS proportion
+	COUNT(opioid_drug_flag) AS opioid_count
 ,	f.county
---,	f.fipscounty
 FROM 
     prescription AS pres
 INNER JOIN 
@@ -43,21 +42,16 @@ WHERE
     d.opioid_drug_flag = 'Y'
     AND f.state = 'TN'
 GROUP BY 
---	f.fipscounty
 	f.county
 ORDER BY 
-	proportion DESC
+	opioid_count DESC
 	)
 ,
 
 cte2 AS (
-
-
----------
 SELECT 
 	COUNT(*) AS total_drugs
 ,	f.county
---,	f.fipscounty
 FROM 
     prescription AS pres
 INNER JOIN 
@@ -72,25 +66,20 @@ INNER JOIN
 INNER JOIN 
     fips_county AS f 
 	ON z.fipscounty = f.fipscounty
---INNER JOIN 
- --   population AS pop 
-	--ON f.fipscounty = pop.fipscounty
 WHERE 
     f.state = 'TN'
 GROUP BY 
---	f.fipscounty
 	f.county
 ORDER BY 
 	COUNT(*) DESC
 )
 
-
-SELECT * ,cte1.proportion*100.0/cte2.total_drugs
+SELECT * ,cte1.opioid_count*100.0/cte2.total_drugs AS diff
 FROM cte1
 INNER JOIN cte2
 	USING(county)
 
-
+---SCRATCHWORK:---
 SELECT *
 FROM prescription;
 
@@ -127,16 +116,16 @@ select *--count(*)*1.0  drugs_opioid
 					where fipscounty = '47127'
 					)
 		)
----------
+---END SCRATCHWORK:---
 
 
 --prescription table for reference:
 SELECT * 
 FROM prescription;
 
---3* Who are the top opioid prescibers for the state of Tennessee?
+--2* Who are the top opioid prescibers for the state of Tennessee?
 
---Michelle's Query:
+--Michelle's Query:--
 SELECT COUNT(opioid_drug_flag),pres.nppes_provider_last_org_name
 FROM prescriber as pres
 INNER JOIN prescription as p
@@ -156,7 +145,7 @@ GROUP BY
 pres.nppes_provider_last_org_name, d.opioid_drug_flag
 ORDER BY COUNT(opioid_drug_flag) DESC
 
---Readjusted Query:
+--Sabrina's Query:--
 SELECT 
 	COUNT(opioid_drug_flag) AS opioid_flag_count
 ,	CONCAT(pres.nppes_provider_first_name,' ',pres.nppes_provider_last_org_name) AS provider_name
@@ -179,29 +168,56 @@ GROUP BY
 ,	provider_name
 ORDER BY 
 	opioid_flag_count DESC
-
-
----Reverse Engineer:
+	
+--Mike's Query:--
 SELECT 
-FROM  
+	CONCAT(nppes_provider_first_name, ' ', nppes_provider_last_org_name) as provider_name, 
+	nppes_provider_zip5 as provider_zip,
+	COUNT(d.opioid_drug_flag) as opioid_count
+FROM prescriber scribe
+JOIN prescription script
+ON scribe.npi = script.npi
+JOIN drug d
+ON script.drug_name = d.drug_name
+WHERE  d.opioid_drug_flag = 'Y' AND nppes_provider_state = 'TN'
+GROUP BY provider_name, provider_zip
+ORDER BY opioid_count DESC
+---------------
+
+
+--Filter by 'Coffey'--
+SELECT 
+	COUNT(opioid_drug_flag) AS flag_count
+	-- CONCAT(nppes_provider_first_name, ' ', nppes_provider_last_org_name) as provider_name
+-- ,	opioid_drug_flag
+-- ,	SUM(total_claim_count)
+FROM prescriber AS pres
+INNER JOIN prescription AS rx
+	ON pres.npi=rx.npi
+INNER JOIN drug AS d
+	ON rx.drug_name=d.drug_name
+WHERE
+	nppes_provider_last_org_name ILIKE 'COFFEY'
+	AND opioid_drug_flag = 'Y'
+ORDER BY flag_count
+	
 
 -- 3* What did the trend in overdose deaths due to opioids look like in Tennessee from 2015 to 2018?
+/*NOTES: overdose_deaths and fips_county tables*/
 
-SELECT zip --54181 records
-FROM zip_fips; 
 
-SELECT nppes_provider_zip5 --25050 records
-FROM prescriber;
+SELECT fipscounty
+FROM fips_county
 
-SELECT drug_name
-FROM prescription;
+SELECT fipscounty
+FROM overdose_deaths
 
-SELECT drug_name
-FROM drug;
+----------
 
 --Michelle's Query:
 SELECT 
 	COUNT(overdose_deaths)
+,	year
 ,	MAX(tot_ratio)	
 FROM
 	prescription as p
@@ -229,7 +245,51 @@ WHERE
     d.opioid_drug_flag = 'Y'
     AND f.state = 'TN'
 	AND year BETWEEN  2015 AND 2018
--- * Is there an association between rates of opioid prescriptions and overdose deaths by county?
+
+---Mike's Query:---
+SELECT SUM(od.overdose_deaths), od.year
+	FROM overdose_deaths od
+	JOIN fips_county fc
+	ON od.fipscounty = fc.fipscounty::integer
+	JOIN zip_fips zip
+	ON fc.fipscounty = zip.fipscounty
+WHERE fc.state = 'TN' AND od.year BETWEEN 2015 AND 2019
+GROUP BY od.year 
+
+-- 4* Is there an association between rates of opioid prescriptions and overdose deaths by county?
+--NOTE: maybe plot as two diff variables in Python?
 
 
--- * Is there any association between a particular type of opioid and number of overdose deaths?
+
+-- 5* Is there any association between a particular type of opioid and number of overdose deaths?
+
+-- WITH cte1 AS
+-- (
+SELECT SUM(o.overdose_deaths) AS sum_od, o.year, d.drug_name
+	FROM prescription AS rx
+	JOIN drug AS d
+	ON rx.drug_name=d.drug_name
+	JOIN prescriber AS p
+	ON rx.npi=p.npi
+	JOIN zip_fips AS zip
+	ON p.nppes_provider_zip5=zip.zip
+	JOIN fips_county AS fc
+	ON zip.fipscounty::integer=fc.fipscounty::integer
+	JOIN overdose_deaths AS o
+	ON fc.fipscounty::Integer=o.fipscounty::integer
+WHERE fc.state = 'TN' AND d.opioid_drug_flag = 'Y'
+GROUP BY o.year, d.drug_name
+ORDER BY o.year
+
+-- cte2 AS
+-- (
+-- SELECT drug_name
+-- 	FROM drug
+-- WHERE opioid_drug_flag = 'Y'
+-- ORDER BY drug_name
+-- )
+
+-- SELECT drug_name
+-- FROM cte1
+-- INNER JOIN cte2
+-- 	USING

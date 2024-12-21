@@ -17,67 +17,69 @@ ORDER BY opioid_drug_flag DESC;
 
 --MY QUERY:--
 
-WITH cte1 AS(
-SELECT 
-	COUNT(opioid_drug_flag) AS opioid_count
-,	f.county
-FROM 
-    prescription AS pres
-INNER JOIN 
-    drug AS d 
-	ON pres.drug_name = d.drug_name
-INNER JOIN 
-    prescriber AS pr 
-	ON pres.npi = pr.npi
-INNER JOIN 
-    zip_fips AS z 
-	ON pr.nppes_provider_zip5 = z.zip
-INNER JOIN 
-    fips_county AS f 
-	ON z.fipscounty = f.fipscounty
-INNER JOIN 
-    population AS pop 
-	ON f.fipscounty = pop.fipscounty
-WHERE 
-    d.opioid_drug_flag = 'Y'
-    AND f.state = 'TN'
-GROUP BY 
-	f.county
-ORDER BY 
-	opioid_count DESC
-	)
-,
+WITH cte1 AS (
+    SELECT 
+    	COUNT(opioid_drug_flag) AS opioid_count
+    ,	f.county
+    FROM 
+        prescription AS pres
+    INNER JOIN 
+        drug AS d 
+    	ON pres.drug_name = d.drug_name
+    INNER JOIN 
+        prescriber AS pr 
+    	ON pres.npi = pr.npi
+    INNER JOIN 
+        zip_fips AS z 
+    	ON pr.nppes_provider_zip5 = z.zip
+    INNER JOIN 
+        fips_county AS f 
+    	ON z.fipscounty = f.fipscounty
+    WHERE 
+        d.opioid_drug_flag = 'Y'
+        AND f.state = 'TN'
+    GROUP BY 
+    	f.county
+),
 
 cte2 AS (
-SELECT 
-	COUNT(*) AS total_drugs
-,	f.county
-FROM 
-    prescription AS pres
-INNER JOIN 
-    drug AS d 
-	ON pres.drug_name = d.drug_name
-INNER JOIN 
-    prescriber AS pr 
-	ON pres.npi = pr.npi
-INNER JOIN 
-    zip_fips AS z 
-	ON pr.nppes_provider_zip5 = z.zip
-INNER JOIN 
-    fips_county AS f 
-	ON z.fipscounty = f.fipscounty
-WHERE 
-    f.state = 'TN'
-GROUP BY 
-	f.county
-ORDER BY 
-	COUNT(*) DESC
+    SELECT 
+    	COUNT(*) AS total_drugs
+    ,	f.county
+    FROM 
+        prescription AS pres
+    INNER JOIN 
+        drug AS d 
+    	ON pres.drug_name = d.drug_name
+    INNER JOIN 
+        prescriber AS pr 
+    	ON pres.npi = pr.npi
+    INNER JOIN 
+        zip_fips AS z 
+    	ON pr.nppes_provider_zip5 = z.zip
+    INNER JOIN 
+        fips_county AS f 
+    	ON z.fipscounty = f.fipscounty
+    WHERE 
+        f.state = 'TN'
+    GROUP BY 
+    	f.county
 )
 
-SELECT * ,cte1.opioid_count*100.0/cte2.total_drugs AS diff
+SELECT 
+    cte1.county AS county,
+    cte1.opioid_count AS opioid_count,
+    cte2.total_drugs AS total_drugs,
+    cte1.opioid_count*100.0/cte2.total_drugs AS diff
 FROM cte1
 INNER JOIN cte2
-	USING(county)
+ON cte1.county = cte2.county
+ORDER BY
+    diff DESC;
+
+
+
+-------
 
 ---SCRATCHWORK:---
 SELECT *
@@ -259,27 +261,100 @@ GROUP BY od.year
 -- 4* Is there an association between rates of opioid prescriptions and overdose deaths by county?
 --NOTE: maybe plot as two diff variables in Python?
 
-
+WITH cte1 AS (
+    SELECT 
+        COUNT(d.opioid_drug_flag) AS opioid_count,
+        f.county
+    FROM 
+        prescription AS pres
+    INNER JOIN 
+        drug AS d 
+        ON pres.drug_name = d.drug_name
+    INNER JOIN 
+        prescriber AS pr 
+        ON pres.npi = pr.npi
+    INNER JOIN 
+        zip_fips AS z 
+        ON pr.nppes_provider_zip5 = z.zip
+    INNER JOIN 
+        fips_county AS f 
+        ON z.fipscounty::INTEGER = f.fipscounty::INTEGER
+    WHERE 
+        d.opioid_drug_flag = 'Y' AND f.state = 'TN'
+    GROUP BY 
+        f.county
+),
+od_data AS (
+    SELECT 
+        f.county,
+        SUM(od.overdose_deaths) AS total_deaths
+    FROM 
+        overdose_deaths AS od
+    INNER JOIN 
+        fips_county AS f 
+        ON od.fipscounty::INTEGER = f.fipscounty::INTEGER
+    WHERE 
+        f.state = 'TN'
+    GROUP BY 
+        f.county
+)
+SELECT 
+    cte1.county,
+    cte1.opioid_count,
+	od_data.total_deaths,
+    od_data.total_deaths*100.0/cte1.opioid_count AS rate
+FROM 
+    cte1
+INNER JOIN 
+    od_data 
+    ON cte1.county = od_data.county
+ORDER BY rate DESC;
 
 -- 5* Is there any association between a particular type of opioid and number of overdose deaths?
 
 -- WITH cte1 AS
 -- (
-SELECT SUM(o.overdose_deaths) AS sum_od, o.year, d.drug_name
+SELECT 
+	-- DISTINCT(o.year),
+	o.year,
+	COUNT(o.overdose_deaths) AS count_od,
+	-- SUM(o.overdose_deaths) AS sum_od,
+	d.drug_name, 
+	fc.county
 	FROM prescription AS rx
-	JOIN drug AS d
+	INNER JOIN drug AS d
 	ON rx.drug_name=d.drug_name
-	JOIN prescriber AS p
+	INNER JOIN prescriber AS p
 	ON rx.npi=p.npi
-	JOIN zip_fips AS zip
+	INNER JOIN zip_fips AS zip
 	ON p.nppes_provider_zip5=zip.zip
 	JOIN fips_county AS fc
 	ON zip.fipscounty::integer=fc.fipscounty::integer
-	JOIN overdose_deaths AS o
+	INNER JOIN overdose_deaths AS o
 	ON fc.fipscounty::Integer=o.fipscounty::integer
-WHERE fc.state = 'TN' AND d.opioid_drug_flag = 'Y'
-GROUP BY o.year, d.drug_name
-ORDER BY o.year
+WHERE fc.state = 'TN' AND d.opioid_drug_flag = 'Y' 
+GROUP BY d.drug_name, o.year, fc.county
+ORDER BY o.year ASC, count_od DESC
+
+-----
+
+
+SELECT DISTINCT year --2015-2018
+FROM overdose_deaths;
+
+----
+
+SELECT 
+	fipscounty,
+	year,
+	overdose_deaths
+FROM overdose_deaths
+WHERE fipscounty = '47037'
+GROUP BY
+	fipscounty,
+	year,
+	overdose_deaths
+ORDER BY fipscounty,overdose_deaths DESC;
 
 -- cte2 AS
 -- (
